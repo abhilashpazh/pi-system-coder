@@ -1,0 +1,39 @@
+# PI System Code Generation Pipeline - Python Dependencies
+# Requirements for the five-stage pipeline tools
+
+# Core AI/ML Backend
+google-generativeai>=0.3.0
+
+# MCP Server
+mcp>=0.9.0
+
+# Environment variables
+python-dotenv>=1.0.0
+
+# Standard Library (included with Python, no installation needed)
+# - json
+# - os
+# - sys
+# - datetime
+# - hashlib
+# - re
+# - typing
+# - unittest
+
+# Optional Development Dependencies
+pytest>=7.0.0  # Alternative to unittest for running tests
+pytest-cov>=4.0.0  # Code coverage reports
+black>=23.0.0  # Code formatting
+flake8>=6.0.0  # Linting
+mypy>=1.0.0  # Type checking
+
+# Documentation
+sphinx>=6.0.0  # For generating documentation
+sphinx-rtd-theme>=1.0.0  # ReadTheDocs theme
+
+# Testing Utilities
+coverage>=7.0.0  # Code coverage analysis
+
+# Note: These are the core requirements for running the pipeline tools.
+# Each tool module can be run independently or as part of the complete pipeline.
+
