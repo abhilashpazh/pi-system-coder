@@ -185,62 +185,16 @@ def format_tool_output(logic_result: Dict[str, Any]) -> str:
         logic_result: Result from logic_creation function
         
     Returns:
-        Formatted string in TOOL_RESULT format
+        Formatted JSON in TOOL_RESULT format
     """
     if logic_result["status"] == "success":
-        # Format pseudo_code as a multi-line string
-        pseudo_code_str = "\n".join(logic_result["pseudo_code"])
-        
-        # Format data structures as JSON string
-        data_structures_str = json.dumps(logic_result["data_structures"])
-        
-        # Build data string
-        data_str = f"pseudo_code={pseudo_code_str}|data_structures={data_structures_str}|error_handling={logic_result['error_handling_strategy']}|reasoning={logic_result['reasoning']}"
-        
-        return f"TOOL_RESULT: logic_creation|status=success|data={data_str}"
+        # Format as JSON for structured data
+        data_json = json.dumps({
+            "pseudo_code": logic_result["pseudo_code"],
+            "data_structures": logic_result["data_structures"],
+            "error_handling_strategy": logic_result["error_handling_strategy"],
+            "reasoning": logic_result["reasoning"]
+        })
+        return f"TOOL_RESULT: logic_creation|status=success|data={data_json}"
     else:
         return f"TOOL_RESULT: logic_creation|status=error|data=|error_msg={logic_result['error_msg']}"
-
-
-if __name__ == "__main__":
-    # Example usage
-    test_cases = [
-        {
-            "request": "Read current PI tag value",
-            "api": "PI SDK",
-        },
-        {
-            "request": "Query AF element hierarchy and retrieve attributes",
-            "api": "PI AF SDK",
-        },
-        {
-            "request": "Authenticate and fetch historical data from PI Web API",
-            "api": "PI Web API",
-        },
-    ]
-    
-    print("Logic Creation Tool - Test Run")
-    print("=" * 60)
-    
-    for test in test_cases:
-        print(f"\nUser Request: {test['request']}")
-        print(f"Selected API: {test['api']}")
-        
-        result = logic_creation(test["request"], test["api"])
-        
-        if result["status"] == "success":
-            print(f"\nPseudo-Code Steps ({len(result['pseudo_code'])}):")
-            for i, step in enumerate(result["pseudo_code"], 1):
-                print(f"  {i}. {step}")
-            
-            print(f"\nData Structures ({len(result['data_structures'])}):")
-            for ds in result["data_structures"]:
-                print(f"  - {ds.get('name', 'N/A')}: {ds.get('type', 'N/A')}")
-            
-            print(f"\nError Handling: {result['error_handling_strategy']}")
-            print(f"Reasoning: {result['reasoning']}")
-        else:
-            print(f"\nError: {result['error_msg']}")
-        
-        print("-" * 60)
-

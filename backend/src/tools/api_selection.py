@@ -38,8 +38,7 @@ AVAILABLE_APIS = [
     "PI SDK",
     "PI AF SDK", 
     "PI Web API",
-    "PI SQL Client",
-    "Powershell Tools for PI"
+    "PI SQL Client"
 ]
 
 # API selection prompt template
@@ -168,29 +167,15 @@ def format_tool_output(selection_result: Dict[str, Any]) -> str:
         Formatted string in TOOL_RESULT format
     """
     if selection_result["status"] == "success":
-        data_str = f"{selection_result['selected_api']}||reasoning={selection_result['reasoning']}"
-        return f"TOOL_RESULT: api_selection|status=success|data={data_str}"
+        # Format as JSON for structured data
+        data_json = json.dumps({
+            "selected_api": selection_result["selected_api"],
+            "reasoning": selection_result["reasoning"]
+        })
+        return f"TOOL_RESULT: api_selection|status=success|data={data_json}"
     else:
         return f"TOOL_RESULT: api_selection|status=error|data=|error_msg={selection_result['error_msg']}"
 
 
-if __name__ == "__main__":
-    # Example usage
-    test_requests = [
-        "Create a function to read PI tag values for the last 24 hours",
-        "I need to query asset hierarchies and navigate through AF databases",
-        "Build a web dashboard that displays PI data to users",
-        "Generate custom SQL reports from PI database",
-    ]
-    
-    print("API Selection Tool - Test Run")
-    print("=" * 60)
-    
-    for request in test_requests:
-        print(f"\nUser Request: {request}")
-        result = api_selection(request)
-        print(f"Selected API: {result['selected_api']}")
-        print(f"Reasoning: {result['reasoning']}")
-        print(f"Status: {result['status']}")
-        print("-" * 60)
+
 

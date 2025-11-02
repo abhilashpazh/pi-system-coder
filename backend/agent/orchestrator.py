@@ -229,10 +229,10 @@ def orchestrator(user_prompt: str, max_iterations: int = 10) -> Dict[str, Any]:
         if last_tool_result:
             prompt_parts.append(f"\n\nLast Tool Result:\n{last_tool_result}")
         
-        prompt_parts.append("\n\nWhat is the next step?")
+        prompt_parts.append("\n\nRespond with FUNCTION_CALL or FINAL_ANSWER.")
         
         full_prompt = "\n".join(prompt_parts)
-        print(full_prompt)
+        
         # Call Gemini API
         if not genai:
             logger.error("Gemini API not configured")
@@ -330,7 +330,7 @@ def orchestrator(user_prompt: str, max_iterations: int = 10) -> Dict[str, Any]:
 if __name__ == "__main__":
     # Example usage
     user_prompt = (
-        "Write a simple function using PI AF SDK to read value of a given PI tag."
+        "Write a simple powershell script to connect to a PI server using Powershell Tools for PI."
     )
     
     logger.info("Orchestrator - PI System Code Generation Pipeline")

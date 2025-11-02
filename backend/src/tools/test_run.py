@@ -287,84 +287,18 @@ def format_tool_output(test_result: Dict[str, Any]) -> str:
         Formatted string in TOOL_RESULT format
     """
     if test_result["status"] == "success":
-        # Build comprehensive data string
-        data_parts = [
-            f"overall={test_result['overall_result']}",
-            f"syntax={test_result['syntax_check']['passed']}",
-            f"logic={test_result['logic_consistency']['passed']}",
-            f"practices={test_result['best_practices']['passed']}",
-            f"errors={test_result['error_handling']['passed']}",
-            f"security={test_result['security']['passed']}",
-            f"reasoning={test_result['reasoning']}"
-        ]
-        
-        # Count total issues
-        total_issues = (
-            len(test_result["syntax_check"]["issues"]) +
-            len(test_result["logic_consistency"]["issues"]) +
-            len(test_result["best_practices"]["issues"]) +
-            len(test_result["error_handling"]["issues"]) +
-            len(test_result["security"]["issues"])
-        )
-        
-        if total_issues > 0:
-            issues_str = f"|total_issues={total_issues}"
-        else:
-            issues_str = ""
-        
-        data_str = "|".join(data_parts) + issues_str
-        
-        return f"TOOL_RESULT: test_run|status=success|data={data_str}"
+        # Format as JSON for structured data
+        data_json = json.dumps({
+            "overall_result": test_result["overall_result"],
+            "syntax_check": test_result["syntax_check"],
+            "logic_consistency": test_result["logic_consistency"],
+            "best_practices": test_result["best_practices"],
+            "error_handling": test_result["error_handling"],
+            "security": test_result["security"],
+            "recommendations": test_result.get("recommendations", []),
+            "reasoning": test_result["reasoning"]
+        })
+        return f"TOOL_RESULT: test_run|status=success|data={data_json}"
     else:
         return f"TOOL_RESULT: test_run|status=error|data=|error_msg={test_result['error_msg']}"
-
-
-if __name__ == "__main__":
-    # Example usage
-    test_code = """import requests
-from requests.auth import HTTPBasicAuth
-
-def read_pi_tag_value(base_url, username, password, tag_name):
-    try:
-        auth = HTTPBasicAuth(username, password)
-        url = f"{base_url}/streams/{tag_name}/value"
-        response = requests.get(url, auth=auth, timeout=30)
-        response.raise_for_status()
-        return response.json()['Value']['Value']
-    except Exception as e:
-        print(f"Error: {e}")
-        return None"""
-
-    print("Test Run Tool - Example")
-    print("=" * 60)
-    
-    result = test_run(
-        code=test_code,
-        target_language="Python",
-        selected_api="PI Web API"
-    )
-    
-    if result["status"] == "success":
-        print(f"\nOverall Result: {result['overall_result'].upper()}")
-        print(f"\nSyntax Check: {'PASS' if result['syntax_check']['passed'] else 'FAIL'}")
-        if result["syntax_check"]["issues"]:
-            print("  Issues:")
-            for issue in result["syntax_check"]["issues"]:
-                print(f"    - {issue}")
-        
-        print(f"\nLogic Consistency: {'PASS' if result['logic_consistency']['passed'] else 'FAIL'}")
-        print(f"\nBest Practices: {'PASS' if result['best_practices']['passed'] else 'FAIL'}")
-        print(f"\nError Handling: {'PASS' if result['error_handling']['passed'] else 'FAIL'}")
-        print(f"\nSecurity: {'PASS' if result['security']['passed'] else 'FAIL'}")
-        
-        if result["recommendations"]:
-            print("\nRecommendations:")
-            for rec in result["recommendations"]:
-                print(f"  - {rec}")
-        
-        print(f"\nReasoning: {result['reasoning']}")
-    else:
-        print(f"\nError: {result['error_msg']}")
-    
-    print("-" * 60)
 

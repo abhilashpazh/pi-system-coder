@@ -123,9 +123,33 @@ def code_creation(
         - error_msg: Error message if status is error
     """
     try:
-        # Validate target language
-        if target_language not in SUPPORTED_LANGUAGES:
+        # Normalize target language for case-insensitive matching
+        # Map common variations to canonical names
+        target_language_normalized = target_language.strip()
+        language_mapping = {
+            "powershell": "PowerShell",
+            "powershell core": "PowerShell",
+            "python": "Python",
+            "csharp": "C#",
+            "c#": "C#",
+            "javascript": "JavaScript",
+            "typescript": "TypeScript",
+            "java": "Java",
+            "vb.net": "VB.NET",
+            "vbnet": "VB.NET",
+            "c++": "C++",
+            "cpp": "C++"
+        }
+        
+        # Normalize the language name
+        target_language_normalized = language_mapping.get(target_language_normalized.lower(), target_language_normalized)
+        
+        # Validate target language (now with normalized name)
+        if target_language_normalized not in SUPPORTED_LANGUAGES:
             raise ValueError(f"Unsupported language: {target_language}")
+        
+        # Continue with normalized language name
+        target_language = target_language_normalized
         
         # Format pseudo-code steps
         formatted_steps = "\n".join([f"{i+1}. {step}" for i, step in enumerate(pseudo_code)])
@@ -224,75 +248,18 @@ def format_tool_output(code_result: Dict[str, Any]) -> str:
         code_result: Result from code_creation function
         
     Returns:
-        Formatted string in TOOL_RESULT format
+        Formatted JSON in TOOL_RESULT format
     """
     if code_result["status"] == "success":
-        # Escape the code for safe transmission
-        code_escaped = code_result["code"].replace("|", "\\|").replace("\n", "\\n")
-        
-        # Format dependencies as JSON string
-        dependencies_str = json.dumps(code_result["dependencies"])
-        
-        # Build data string
-        data_str = f"code={code_escaped}|dependencies={dependencies_str}|usage={code_result['usage_example']}|reasoning={code_result['reasoning']}"
-        
-        return f"TOOL_RESULT: code_creation|status=success|data={data_str}"
+        # Format as JSON for structured data
+        data_json = json.dumps({
+            "code": code_result["code"],
+            "dependencies": code_result["dependencies"],
+            "usage_example": code_result["usage_example"],
+            "reasoning": code_result["reasoning"]
+        })
+        return f"TOOL_RESULT: code_creation|status=success|data={data_json}"
     else:
         return f"TOOL_RESULT: code_creation|status=error|data=|error_msg={code_result['error_msg']}"
 
-
-if __name__ == "__main__":
-    # Example usage
-    test_pseudo_code = [
-        "Connect to PI Data Archive",
-        "Authenticate with credentials",
-        "Query tag by name",
-        "Read current value",
-        "Handle errors and cleanup"
-    ]
-    
-    test_data_structures = [
-        {
-            "name": "server",
-            "type": "PIServer",
-            "description": "PI Data Archive server connection"
-        }
-    ]
-    
-    test_error_handling = "Try-catch around all operations, proper cleanup in finally block"
-    
-    test_cases = [
-        {"language": "Python", "api": "PI Web API"},
-        {"language": "C#", "api": "PI SDK"},
-        {"language": "JavaScript", "api": "PI Web API"},
-    ]
-    
-    print("Code Creation Tool - Test Run")
-    print("=" * 60)
-    
-    for test in test_cases:
-        print(f"\nTarget Language: {test['language']}")
-        print(f"Selected API: {test['api']}")
-        
-        result = code_creation(
-            pseudo_code=test_pseudo_code,
-            data_structures=test_data_structures,
-            error_handling_strategy=test_error_handling,
-            selected_api=test["api"],
-            target_language=test["language"]
-        )
-        
-        if result["status"] == "success":
-            print(f"\nDependencies ({len(result['dependencies'])}):")
-            for dep in result["dependencies"]:
-                print(f"  - {dep}")
-            
-            print(f"\nUsage Example: {result['usage_example']}")
-            print(f"Reasoning: {result['reasoning']}")
-            print(f"\nGenerated Code Preview (first 200 chars):")
-            print(result["code"][:200] + "...")
-        else:
-            print(f"\nError: {result['error_msg']}")
-        
-        print("-" * 60)
 
