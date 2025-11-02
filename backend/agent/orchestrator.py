@@ -1,10 +1,10 @@
 """
 Orchestrator for PI System Code Generation Pipeline
 
-This module orchestrates the agentic LLM calls to Gemini 2.0 Flash API,
+This module orchestrates the agentic LLM calls to Gemini 2.0 Flash API or OpenAI API,
 coordinating the five-stage pipeline through iterative function calling.
 
-Requirements: Agentic orchestration of pipeline tools via Gemini API
+Requirements: Agentic orchestration of pipeline tools via LLM APIs
 """
 
 import os
@@ -32,20 +32,17 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-try:
-    from google import generativeai as genai
-except ImportError:
-    logger.warning("google-generativeai not installed. Using fallback.")
-    genai = None
+# Suppress OpenAI SDK debug logs
+logging.getLogger("openai").setLevel(logging.WARNING)
+logging.getLogger("openai._base_client").setLevel(logging.WARNING)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 
-# Configure Gemini API
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "") or os.getenv("GOOGLE_API_KEY", "")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash-exp")
-if GEMINI_API_KEY and genai:
-    try:
-        genai.configure(api_key=GEMINI_API_KEY)
-    except Exception as e:
-        logger.warning(f"Failed to configure Gemini API: {e}")
+# Import LLM configuration
+from backend.src.config.llm_config import get_llm_config
+
+# Get global LLM config instance
+llm_config = get_llm_config()
 
 # Import the five pipeline tools
 from backend.src.tools.api_selection import api_selection, format_tool_output as format_api_output
@@ -80,28 +77,93 @@ def parse_function_call(response_text: str) -> Optional[Dict[str, Any]]:
         Dictionary with function name and arguments, or None if not found
     """
     # Pattern: FUNCTION_CALL: function_name|arg1=val1|arg2=val2|...
-    pattern = r'FUNCTION_CALL:\s*([^|\n]+)(?:\|([^|\n]+=.*))*'
-    match = re.search(pattern, response_text)
+    # Match the full function call line
+    pattern = r'FUNCTION_CALL:\s*([^|\n]+)(.*)'
+    match = re.search(pattern, response_text, re.DOTALL)
     
     if not match:
         return None
     
     function_name = match.group(1).strip()
-    arguments_str = match.group(2) if match.group(2) else ""
+    args_part = match.group(2).strip() if match.group(2) else ""
     
     # Parse arguments
     arguments = {}
-    if arguments_str:
+    if args_part:
         # Split by | and parse key=value pairs
-        for arg in arguments_str.split('|'):
+        for arg in args_part.split('|'):
+            arg = arg.strip()
+            if not arg:
+                continue
+                
             if '=' in arg:
                 key, value = arg.split('=', 1)
-                arguments[key.strip()] = value.strip()
+                key = key.strip()
+                value = value.strip()
+                
+                # Try to parse JSON values (arrays, objects, booleans, null)
+                parsed_value = try_parse_json(value)
+                arguments[key] = parsed_value
     
     return {
         "function": function_name,
         "arguments": arguments
     }
+
+
+def try_parse_json(value: str) -> Any:
+    """
+    Try to parse a value as JSON. If it fails, return the original string.
+    Handles unquoted strings, JSON arrays, objects, booleans, null, etc.
+    
+    Args:
+        value: String value to parse
+        
+    Returns:
+        Parsed JSON object/list or original string
+    """
+    if not value:
+        return value
+        
+    value = value.strip()
+    
+    # If it looks like a JSON array or object, try to parse it
+    if (value.startswith('[') and value.endswith(']')) or \
+       (value.startswith('{') and value.endswith('}')):
+        try:
+            return json.loads(value)
+        except (json.JSONDecodeError, ValueError):
+            pass
+    
+    # If it's a quoted string, unquote it
+    if (value.startswith('"') and value.endswith('"')) or \
+       (value.startswith("'") and value.endswith("'")):
+        # Remove quotes but keep escaped quotes inside
+        if value.startswith('"'):
+            try:
+                # Use JSON decoding to handle escape sequences properly
+                return json.loads(value)
+            except (json.JSONDecodeError, ValueError):
+                # Fallback: just remove surrounding quotes
+                return value[1:-1]
+        else:
+            # Single quotes - just remove them
+            return value[1:-1]
+    
+    # Check for boolean/null values
+    if value.lower() == 'true':
+        return True
+    if value.lower() == 'false':
+        return False
+    if value.lower() == 'null' or value.lower() == 'none':
+        return None
+    
+    # Try parsing as JSON (might be an unquoted JSON value)
+    try:
+        return json.loads(value)
+    except (json.JSONDecodeError, ValueError):
+        # Not valid JSON, return as-is
+        return value
 
 
 def parse_final_answer(response_text: str) -> Optional[str]:
@@ -189,7 +251,7 @@ def call_tool(function_name: str, arguments: Dict[str, Any]) -> str:
         return f"TOOL_RESULT: {function_name}|status=error|data=|error_msg=Tool execution failed: {str(e)}"
 
 
-def orchestrator(user_prompt: str, max_iterations: int = 10) -> Dict[str, Any]:
+def orchestrator(user_prompt: str, max_iterations: int = 20) -> Dict[str, Any]:
     """
     Orchestrate agentic LLM calls to execute the five-stage pipeline.
     
@@ -212,6 +274,10 @@ def orchestrator(user_prompt: str, max_iterations: int = 10) -> Dict[str, Any]:
     last_llm_response = ""
     last_tool_result = ""
     
+    # Track language and API from previous steps
+    tracked_language = None
+    tracked_api = None
+    
     # Iterate up to max_iterations times
     for i in range(max_iterations):
         iteration_num = i + 1
@@ -233,35 +299,22 @@ def orchestrator(user_prompt: str, max_iterations: int = 10) -> Dict[str, Any]:
         
         full_prompt = "\n".join(prompt_parts)
         
-        # Call Gemini API
-        if not genai:
-            logger.error("Gemini API not configured")
-            return {
-                "status": "error",
-                "error_msg": "Gemini API not configured",
-                "iterations": iterations
-            }
-        
+        # Call LLM API (Gemini or OpenAI based on configuration)
         try:
-            logger.debug(f"Calling Gemini API for iteration {iteration_num}")
-            model = genai.GenerativeModel(GEMINI_MODEL)
-            response = model.generate_content(
+            logger.debug(f"Calling {llm_config.provider.value.upper()} API for iteration {iteration_num}")
+            last_llm_response = llm_config.generate_content(
                 full_prompt,
-                generation_config={
-                    "temperature": 0.7,  # Balanced for reasoning
-                    "max_output_tokens": 2000,
-                }
+                temperature=0.7,
+                max_tokens=2000
             )
-            
-            last_llm_response = response.text.strip()
             logger.info(f"LLM Response received for iteration {iteration_num}")
             logger.debug(f"LLM Response: {last_llm_response[:500]}...")  # Log first 500 chars
             
         except Exception as e:
-            logger.error(f"Gemini API call failed for iteration {iteration_num}: {e}")
+            logger.error(f"LLM API call failed for iteration {iteration_num}: {e}")
             return {
                 "status": "error",
-                "error_msg": f"Gemini API call failed: {str(e)}",
+                "error_msg": f"LLM API call failed: {str(e)}",
                 "iterations": iterations
             }
         
@@ -292,12 +345,43 @@ def orchestrator(user_prompt: str, max_iterations: int = 10) -> Dict[str, Any]:
             logger.info(f"Iteration {iteration_num}: FUNCTION_CALL parsed: {function_call['function']}")
             iteration_info["tool_call"] = function_call
             
+            # Extract language and API from code_creation results
+            if function_call['function'] == 'code_creation':
+                # Parse language from arguments
+                lang_arg = function_call['arguments'].get('language') or function_call['arguments'].get('target_language')
+                if lang_arg:
+                    tracked_language = lang_arg
+            
+            # For test_run, use tracked language if not provided
+            if function_call['function'] == 'test_run':
+                if not function_call['arguments'].get('language') and not function_call['arguments'].get('target_language'):
+                    if tracked_language:
+                        function_call['arguments']['language'] = tracked_language
+                        logger.info(f"Using tracked language '{tracked_language}' for test_run")
+            
             # Execute the tool
             logger.debug(f"Executing tool: {function_call['function']} with args: {function_call['arguments']}")
             tool_result = call_tool(
                 function_call["function"],
                 function_call["arguments"]
             )
+            
+            # Extract language from code_creation tool result
+            if function_call['function'] == 'code_creation' and tool_result.startswith('TOOL_RESULT: code_creation|status=success'):
+                try:
+                    # Parse the JSON data from tool result
+                    import json
+                    data_start = tool_result.find('data=') + 5
+                    data_end = tool_result.find('|', data_start)
+                    if data_end == -1:
+                        data_end = len(tool_result)
+                    data_json_str = tool_result[data_start:data_end]
+                    data = json.loads(data_json_str)
+                    # Look for language in the code context or extract from previous arguments
+                    # We'll rely on the language from arguments since it's stored there
+                except:
+                    pass
+            
             last_tool_result = tool_result
             iteration_info["tool_result"] = tool_result
             logger.info(f"Tool result received for iteration {iteration_num}")
@@ -330,14 +414,14 @@ def orchestrator(user_prompt: str, max_iterations: int = 10) -> Dict[str, Any]:
 if __name__ == "__main__":
     # Example usage
     user_prompt = (
-        "Write a simple powershell script to connect to a PI server using Powershell Tools for PI."
+        "Write a simple powershell script to connect to a PI collective using Powershell Tools for PI. Read value of all tags for a given pointsource."
     )
     
     logger.info("Orchestrator - PI System Code Generation Pipeline")
     logger.info("=" * 70)
     logger.info(f"User Request: {user_prompt}")
     
-    result = orchestrator(user_prompt, max_iterations=10)
+    result = orchestrator(user_prompt, max_iterations=20)
     
     logger.info("=" * 70)
     logger.info(f"Status: {result['status'].upper()}")
