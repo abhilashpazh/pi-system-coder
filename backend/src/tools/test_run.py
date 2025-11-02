@@ -8,9 +8,13 @@ Requirements: FR-004, FR-010, FR-032, FR-040
 """
 
 import os
+import sys
 import json
 import re
 from typing import Dict, Any, Optional, List
+
+# Add parent directories to path for imports
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
 
 # Load environment variables from .env file
 try:
@@ -19,20 +23,11 @@ try:
 except ImportError:
     pass  # dotenv not installed, rely on environment variables
 
-try:
-    from google import generativeai as genai
-except ImportError:
-    print("Warning: google-generativeai not installed. Using fallback.")
-    genai = None
+# Import LLM configuration
+from backend.src.config.llm_config import get_llm_config
 
-# Configure Gemini API
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "") or os.getenv("GOOGLE_API_KEY", "")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash-exp")
-if GEMINI_API_KEY and genai:
-    try:
-        genai.configure(api_key=GEMINI_API_KEY)
-    except Exception as e:
-        print(f"Warning: Failed to configure Gemini API: {e}")
+# Get global LLM config instance
+llm_config = get_llm_config()
 
 # Test run prompt template
 TEST_RUN_PROMPT = """You are an expert code quality analyst specializing in the PI System.
@@ -128,18 +123,12 @@ def test_run(
             context_str = json.dumps(context, indent=2)
             full_prompt += f"\n\nAdditional Context:\n{context_str}"
         
-        # Call Gemini API
-        model = genai.GenerativeModel(GEMINI_MODEL)
-        response = model.generate_content(
+        # Call LLM API
+        response_text = llm_config.generate_content(
             full_prompt,
-            generation_config={
-                "temperature": 0.2,  # Very low temperature for consistent analysis
-                "max_output_tokens": 1500,
-            }
+            temperature=0.2,
+            max_tokens=1500
         )
-        
-        # Parse response
-        response_text = response.text.strip()
         
         # Extract JSON from response
         json_start = response_text.find('{')
