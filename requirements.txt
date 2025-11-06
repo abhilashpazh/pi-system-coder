@@ -11,6 +11,9 @@ mcp>=0.9.0
 # Environment variables
 python-dotenv>=1.0.0
 
+# Streamlit UI
+streamlit>=1.28.0
+
 # Standard Library (included with Python, no installation needed)
 # - json
 # - os

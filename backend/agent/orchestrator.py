@@ -12,7 +12,7 @@ import sys
 import json
 import re
 import logging
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Callable
 
 # Add parent directories to path for imports
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
@@ -251,13 +251,15 @@ def call_tool(function_name: str, arguments: Dict[str, Any]) -> str:
         return f"TOOL_RESULT: {function_name}|status=error|data=|error_msg=Tool execution failed: {str(e)}"
 
 
-def orchestrator(user_prompt: str, max_iterations: int = 20) -> Dict[str, Any]:
+def orchestrator(user_prompt: str, max_iterations: int = 20, iteration_callback: Optional[Callable[[Dict[str, Any]], None]] = None) -> Dict[str, Any]:
     """
     Orchestrate agentic LLM calls to execute the five-stage pipeline.
     
     Args:
         user_prompt: User's natural language request
-        max_iterations: Maximum number of iterations (default: 10)
+        max_iterations: Maximum number of iterations (default: 20)
+        iteration_callback: Optional callback function called after each iteration.
+                          Receives iteration_info dictionary as argument.
         
     Returns:
         Dictionary containing:
@@ -333,6 +335,13 @@ def orchestrator(user_prompt: str, max_iterations: int = 20) -> Dict[str, Any]:
             iteration_info["final_answer"] = final_answer
             iterations.append(iteration_info)
             
+            # Call iteration callback for final answer
+            if iteration_callback:
+                try:
+                    iteration_callback(iteration_info)
+                except Exception as e:
+                    logger.warning(f"Error in iteration callback: {e}")
+            
             return {
                 "status": "success",
                 "final_answer": final_answer,
@@ -388,6 +397,13 @@ def orchestrator(user_prompt: str, max_iterations: int = 20) -> Dict[str, Any]:
             logger.debug(f"Tool Result: {tool_result[:500]}...")  # Log first 500 chars
             
             iterations.append(iteration_info)
+            
+            # Call iteration callback if provided (for real-time status updates)
+            if iteration_callback:
+                try:
+                    iteration_callback(iteration_info)
+                except Exception as e:
+                    logger.warning(f"Error in iteration callback: {e}")
             
             # Continue to next iteration
             continue
