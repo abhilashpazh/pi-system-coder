@@ -172,7 +172,7 @@ def parse_final_answer(response_text: str) -> Optional[str]:
     
     Args:
         response_text: LLM response text
-        
+    
     Returns:
         Final answer string, or None if not found
     """
@@ -184,6 +184,41 @@ def parse_final_answer(response_text: str) -> Optional[str]:
         return match.group(1).strip()
     
     return None
+
+
+def parse_tool_result_data(tool_result: str) -> Optional[Dict[str, Any]]:
+    """
+    Parse data from TOOL_RESULT format string.
+    
+    Args:
+        tool_result: Tool result string in format: TOOL_RESULT: tool_name|status=success|data={json}
+    
+    Returns:
+        Parsed data dictionary, or None if parsing fails
+    """
+    if not tool_result or not tool_result.startswith('TOOL_RESULT:'):
+        return None
+    
+    try:
+        # Extract data part: data={json}
+        data_start = tool_result.find('data=') + 5
+        if data_start == 4:  # Not found
+            return None
+        
+        # Find the end of data (either | or end of string)
+        data_end = tool_result.find('|', data_start)
+        if data_end == -1:
+            data_end = len(tool_result)
+        
+        data_json_str = tool_result[data_start:data_end]
+        if not data_json_str:
+            return None
+        
+        # Parse JSON
+        return json.loads(data_json_str)
+    except (json.JSONDecodeError, ValueError, IndexError) as e:
+        logger.warning(f"Failed to parse tool result data: {e}")
+        return None
 
 
 def call_tool(function_name: str, arguments: Dict[str, Any]) -> str:
@@ -229,6 +264,7 @@ def call_tool(function_name: str, arguments: Dict[str, Any]) -> str:
                 code=arguments.get("code", ""),
                 target_language=arguments.get("target_language", arguments.get("language", "Python")),
                 selected_api=arguments.get("selected_api", ""),
+                user_request=arguments.get("user_prompt", ""),
                 context=arguments.get("context")
             )
             return format_test_output(result)
@@ -369,6 +405,22 @@ def orchestrator(user_prompt: str, max_iterations: int = 20, iteration_callback:
                         logger.info(f"Using tracked language '{tracked_language}' for test_run")
             
             # Execute the tool
+            # Get context from last tool result (if available)
+            context = None
+            if last_tool_result:
+                context = parse_tool_result_data(last_tool_result)
+                if context:
+                    logger.debug(f"Extracted context from last tool result: {list(context.keys())}")
+            
+            # Add user_prompt to arguments if not already present
+            if 'user_prompt' not in function_call['arguments']:
+                function_call['arguments']['user_prompt'] = user_prompt
+            
+            # Automatically inject context from last tool result if not already provided
+            if context and ('context' not in function_call['arguments'] or function_call['arguments']['context'] is None):
+                function_call['arguments']['context'] = context
+                logger.debug(f"Injecting context from last tool result into {function_call['function']}")
+            
             logger.debug(f"Executing tool: {function_call['function']} with args: {function_call['arguments']}")
             tool_result = call_tool(
                 function_call["function"],

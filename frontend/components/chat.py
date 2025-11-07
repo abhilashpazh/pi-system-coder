@@ -38,12 +38,13 @@ def render_chat_interface(
         col1, col2 = st.columns([5, 1])
         
         with col1:
-            user_input = st.text_input(
+            user_input = st.text_area(
                 "Type your message...",
                 key="user_input",
                 placeholder="e.g., Read PI tag values for the last 24 hours",
                 disabled=disabled,
-                label_visibility="collapsed"
+                label_visibility="collapsed",
+                height=100
             )
         
         with col2:

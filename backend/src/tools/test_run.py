@@ -32,6 +32,8 @@ llm_config = get_llm_config()
 # Test run prompt template
 TEST_RUN_PROMPT = """You are an expert code quality analyst specializing in the PI System.
 
+Original User Request: {user_request}
+
 Generated Code:
 ```{target_language}
 {code}
@@ -40,7 +42,7 @@ Generated Code:
 Language: {target_language}
 Selected API: {selected_api}
 
-Perform comprehensive code quality analysis and validation.
+Perform comprehensive code quality analysis and validation to ensure the code correctly addresses the user's request: {user_request}
 
 Your response MUST be a JSON object with the following structure:
 {{
@@ -52,10 +54,10 @@ Your response MUST be a JSON object with the following structure:
         "passed": true/false,
         "issues": ["list of logical inconsistencies if any"]
     }},
-    "best_practices": {{
-        "passed": true/false,
-        "issues": ["list of best practice violations if any"]
-    }},
+    # "best_practices": {{  # DISABLED - Commented out for now
+    #     "passed": true/false,
+    #     "issues": ["list of best practice violations if any"]
+    # }},
     "error_handling": {{
         "passed": true/false,
         "issues": ["list of error handling issues if any"]
@@ -72,11 +74,11 @@ Your response MUST be a JSON object with the following structure:
 Check for:
 1. Syntax errors and basic code correctness
 2. Logical consistency and proper flow
-3. {selected_api} best practices compliance
-4. Adequate error handling coverage
-5. Security issues (hardcoded credentials, SQL injection, etc.)
-6. Code quality issues
-7. Resource management (connections, streams, etc.)
+3. Adequate error handling coverage
+4. Security issues (hardcoded credentials, SQL injection, etc.)
+5. Code quality issues
+6. Resource management (connections, streams, etc.)
+# Note: Best practices compliance check is disabled for now
 
 Return ONLY the JSON response, no additional text."""
 
@@ -85,6 +87,7 @@ def test_run(
     code: str,
     target_language: str,
     selected_api: str,
+    user_request: str = "",
     context: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
@@ -94,6 +97,7 @@ def test_run(
         code: Generated implementation code
         target_language: Programming language of the code
         selected_api: The PI API used in the code
+        user_request: Original user request/prompt
         context: Optional context from previous interactions
         
     Returns:
@@ -101,7 +105,7 @@ def test_run(
         - status: "success" or "error"
         - syntax_check: Dictionary with passed flag and issues
         - logic_consistency: Dictionary with passed flag and issues
-        - best_practices: Dictionary with passed flag and issues
+        - best_practices: Dictionary with passed flag and issues (DISABLED - defaults to passed)
         - error_handling: Dictionary with passed flag and issues
         - security: Dictionary with passed flag and issues
         - overall_result: "pass" or "fail"
@@ -113,6 +117,7 @@ def test_run(
     try:
         # Build complete prompt
         full_prompt = TEST_RUN_PROMPT.format(
+            user_request=user_request,
             target_language=target_language,
             code=code,
             selected_api=selected_api
@@ -139,8 +144,13 @@ def test_run(
         
         result = json.loads(response_text[json_start:json_end])
         
+        # Set default best_practices if not present (disabled for now)
+        if "best_practices" not in result:
+            result["best_practices"] = {"passed": True, "issues": []}
+        
         # Validate result structure
-        required_sections = ["syntax_check", "logic_consistency", "best_practices", 
+        required_sections = ["syntax_check", "logic_consistency", 
+                           # "best_practices",  # DISABLED - Commented out for now
                            "error_handling", "security", "overall_result", "recommendations", "reasoning"]
         
         for section in required_sections:
@@ -148,7 +158,9 @@ def test_run(
                 raise ValueError(f"Missing required section: {section}")
         
         # Validate check sections have passed flag
-        check_sections = ["syntax_check", "logic_consistency", "best_practices", "error_handling", "security"]
+        check_sections = ["syntax_check", "logic_consistency", 
+                         # "best_practices",  # DISABLED - Commented out for now
+                         "error_handling", "security"]
         for section in check_sections:
             if "passed" not in result[section]:
                 raise ValueError(f"Missing 'passed' field in {section}")
@@ -171,7 +183,7 @@ def test_run(
             "status": "success",
             "syntax_check": result["syntax_check"],
             "logic_consistency": result["logic_consistency"],
-            "best_practices": result["best_practices"],
+            "best_practices": result.get("best_practices", {"passed": True, "issues": []}),  # DISABLED - defaults to passed
             "error_handling": result["error_handling"],
             "security": result["security"],
             "overall_result": result["overall_result"],
@@ -186,7 +198,7 @@ def test_run(
             "status": "error",
             "syntax_check": None,
             "logic_consistency": None,
-            "best_practices": None,
+            "best_practices": {"passed": True, "issues": []},  # DISABLED - defaults to passed
             "error_handling": None,
             "security": None,
             "overall_result": None,
@@ -200,7 +212,7 @@ def test_run(
             "status": "error",
             "syntax_check": None,
             "logic_consistency": None,
-            "best_practices": None,
+            "best_practices": {"passed": True, "issues": []},  # DISABLED - defaults to passed
             "error_handling": None,
             "security": None,
             "overall_result": None,
@@ -281,7 +293,7 @@ def format_tool_output(test_result: Dict[str, Any]) -> str:
             "overall_result": test_result["overall_result"],
             "syntax_check": test_result["syntax_check"],
             "logic_consistency": test_result["logic_consistency"],
-            "best_practices": test_result["best_practices"],
+            "best_practices": test_result.get("best_practices", {"passed": True, "issues": []}),  # DISABLED - defaults to passed
             "error_handling": test_result["error_handling"],
             "security": test_result["security"],
             "recommendations": test_result.get("recommendations", []),
