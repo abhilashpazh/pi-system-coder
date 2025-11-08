@@ -186,38 +186,50 @@ def parse_final_answer(response_text: str) -> Optional[str]:
     return None
 
 
-def parse_tool_result_data(tool_result: str) -> Optional[Dict[str, Any]]:
+def parse_tool_result(tool_result: str) -> Optional[Dict[str, Any]]:
     """
-    Parse data from TOOL_RESULT format string.
+    Parse TOOL_RESULT format string and extract status, data, and error message.
     
     Args:
         tool_result: Tool result string in format: TOOL_RESULT: tool_name|status=success|data={json}
     
     Returns:
-        Parsed data dictionary, or None if parsing fails
+        Dictionary containing status, data (dict or None), and error_msg (str or None),
+        or None if parsing fails
     """
     if not tool_result or not tool_result.startswith('TOOL_RESULT:'):
         return None
-    
+
+    segments = tool_result.split('|')
+    parsed: Dict[str, Any] = {}
+    data_json_str = None
+
     try:
-        # Extract data part: data={json}
-        data_start = tool_result.find('data=') + 5
-        if data_start == 4:  # Not found
-            return None
-        
-        # Find the end of data (either | or end of string)
-        data_end = tool_result.find('|', data_start)
-        if data_end == -1:
-            data_end = len(tool_result)
-        
-        data_json_str = tool_result[data_start:data_end]
-        if not data_json_str:
-            return None
-        
-        # Parse JSON
-        return json.loads(data_json_str)
+        for segment in segments[1:]:  # Skip the leading TOOL_RESULT: ... segment
+            if '=' not in segment:
+                continue
+            key, value = segment.split('=', 1)
+            key = key.strip()
+            value = value.strip()
+
+            if key == 'status':
+                parsed['status'] = value
+            elif key == 'data':
+                data_json_str = value
+            elif key == 'error_msg':
+                parsed['error_msg'] = value
+
+        if data_json_str:
+            parsed['data'] = json.loads(data_json_str)
+        else:
+            parsed['data'] = None
+
+        if 'error_msg' not in parsed:
+            parsed['error_msg'] = None
+
+        return parsed
     except (json.JSONDecodeError, ValueError, IndexError) as e:
-        logger.warning(f"Failed to parse tool result data: {e}")
+        logger.warning(f"Failed to parse tool result: {e}")
         return None
 
 
@@ -408,7 +420,7 @@ def orchestrator(user_prompt: str, max_iterations: int = 20, iteration_callback:
             # Get context from last tool result (if available)
             context = None
             if last_tool_result:
-                context = parse_tool_result_data(last_tool_result)
+                context = parse_tool_result(last_tool_result)
                 if context:
                     logger.debug(f"Extracted context from last tool result: {list(context.keys())}")
             
