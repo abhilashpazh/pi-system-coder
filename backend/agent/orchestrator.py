@@ -14,8 +14,7 @@ import re
 import logging
 from typing import Dict, Any, Optional, List, Callable
 
-# Add parent directories to path for imports
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+
 
 # Load environment variables from .env file
 try:
@@ -233,6 +232,68 @@ def parse_tool_result(tool_result: str) -> Optional[Dict[str, Any]]:
         return None
 
 
+
+# Map tool names to their functions and output formatters
+TOOL_MAP = {
+    "api_selection": (api_selection, format_api_output),
+    "logic_creation": (logic_creation, format_logic_output),
+    "code_creation": (code_creation, format_code_output),
+    "test_run": (test_run, format_test_output),
+    "file_output": (file_output, format_file_output),
+}
+
+# Argument preparation functions
+def _prepare_api_selection_args(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "user_request": arguments.get("user_prompt", ""),
+        "context": arguments.get("context")
+    }
+
+def _prepare_logic_creation_args(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "user_request": arguments.get("user_prompt", ""),
+        "selected_api": arguments.get("selected_api", ""),
+        "context": arguments.get("context")
+    }
+
+def _prepare_code_creation_args(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "pseudo_code": arguments.get("pseudo_code", []),
+        "data_structures": arguments.get("data_structures", []),
+        "error_handling_strategy": arguments.get("error_handling_strategy", ""),
+        "selected_api": arguments.get("selected_api", ""),
+        "target_language": arguments.get("target_language", arguments.get("language", "Python")),
+        "context": arguments.get("context")
+    }
+
+def _prepare_test_run_args(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "code": arguments.get("code", ""),
+        "target_language": arguments.get("target_language", arguments.get("language", "Python")),
+        "selected_api": arguments.get("selected_api", ""),
+        "user_request": arguments.get("user_prompt", ""),
+        "context": arguments.get("context")
+    }
+
+def _prepare_file_output_args(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "code": arguments.get("code", arguments.get("tested_code", "")),
+        "target_language": arguments.get("target_language", arguments.get("language", "Python")),
+        "selected_api": arguments.get("selected_api", ""),
+        "dependencies": arguments.get("dependencies", []),
+        "test_results": arguments.get("test_results"),
+        "context": arguments.get("context")
+    }
+
+# Map tool names to their argument preparation functions
+ARG_PREP_MAP = {
+    "api_selection": _prepare_api_selection_args,
+    "logic_creation": _prepare_logic_creation_args,
+    "code_creation": _prepare_code_creation_args,
+    "test_run": _prepare_test_run_args,
+    "file_output": _prepare_file_output_args,
+}
+
 def call_tool(function_name: str, arguments: Dict[str, Any]) -> str:
     """
     Execute a pipeline tool based on function name and arguments.
@@ -245,55 +306,21 @@ def call_tool(function_name: str, arguments: Dict[str, Any]) -> str:
         Formatted tool result string
     """
     try:
-        if function_name == "api_selection":
-            result = api_selection(
-                user_request=arguments.get("user_prompt", ""),
-                context=arguments.get("context")
-            )
-            return format_api_output(result)
-            
-        elif function_name == "logic_creation":
-            result = logic_creation(
-                user_request=arguments.get("user_prompt", ""),
-                selected_api=arguments.get("selected_api", ""),
-                context=arguments.get("context")
-            )
-            return format_logic_output(result)
-            
-        elif function_name == "code_creation":
-            result = code_creation(
-                pseudo_code=arguments.get("pseudo_code", []),
-                data_structures=arguments.get("data_structures", []),
-                error_handling_strategy=arguments.get("error_handling_strategy", ""),
-                selected_api=arguments.get("selected_api", ""),
-                target_language=arguments.get("target_language", arguments.get("language", "Python")),
-                context=arguments.get("context")
-            )
-            return format_code_output(result)
-            
-        elif function_name == "test_run":
-            result = test_run(
-                code=arguments.get("code", ""),
-                target_language=arguments.get("target_language", arguments.get("language", "Python")),
-                selected_api=arguments.get("selected_api", ""),
-                user_request=arguments.get("user_prompt", ""),
-                context=arguments.get("context")
-            )
-            return format_test_output(result)
-            
-        elif function_name == "file_output":
-            result = file_output(
-                code=arguments.get("code", arguments.get("tested_code", "")),
-                target_language=arguments.get("target_language", arguments.get("language", "Python")),
-                selected_api=arguments.get("selected_api", ""),
-                dependencies=arguments.get("dependencies", []),
-                test_results=arguments.get("test_results"),
-                context=arguments.get("context")
-            )
-            return format_file_output(result)
-            
-        else:
+        tool_entry = TOOL_MAP.get(function_name)
+        if tool_entry is None:
             return f"TOOL_RESULT: {function_name}|status=error|data=|error_msg=Unknown function: {function_name}"
+        
+        tool_func, format_func = tool_entry
+        
+        # Prepare arguments using the argument preparation map
+        arg_prep_func = ARG_PREP_MAP.get(function_name)
+        if arg_prep_func is None:
+            return f"TOOL_RESULT: {function_name}|status=error|data=|error_msg=No argument preparation function found for {function_name}"
+        
+        prepared_args = arg_prep_func(arguments)
+        result = tool_func(**prepared_args)
+            
+        return format_func(result)
             
     except Exception as e:
         return f"TOOL_RESULT: {function_name}|status=error|data=|error_msg=Tool execution failed: {str(e)}"

@@ -12,8 +12,7 @@ import os
 from typing import Any, Dict, List, Optional
 import json
 
-# Add parent directory to path for imports
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
@@ -241,6 +240,67 @@ async def list_tools() -> List[Tool]:
     ]
 
 
+
+# Map tool names to their functions
+TOOL_MAP = {
+    "api_selection": api_selection,
+    "logic_creation": logic_creation,
+    "code_creation": code_creation,
+    "test_run": test_run,
+    "file_output": file_output,
+}
+
+# Argument preparation functions
+def _prepare_api_selection_args(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "user_request": arguments.get("user_request"),
+        "context": arguments.get("context")
+    }
+
+def _prepare_logic_creation_args(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "user_request": arguments.get("user_request"),
+        "selected_api": arguments.get("selected_api"),
+        "context": arguments.get("context")
+    }
+
+def _prepare_code_creation_args(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "pseudo_code": arguments.get("pseudo_code"),
+        "data_structures": arguments.get("data_structures"),
+        "error_handling_strategy": arguments.get("error_handling_strategy"),
+        "selected_api": arguments.get("selected_api"),
+        "target_language": arguments.get("target_language", "Python"),
+        "context": arguments.get("context")
+    }
+
+def _prepare_test_run_args(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "code": arguments.get("code"),
+        "target_language": arguments.get("target_language"),
+        "selected_api": arguments.get("selected_api"),
+        "context": arguments.get("context")
+    }
+
+def _prepare_file_output_args(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "code": arguments.get("code"),
+        "target_language": arguments.get("target_language"),
+        "selected_api": arguments.get("selected_api"),
+        "dependencies": arguments.get("dependencies"),
+        "test_results": arguments.get("test_results"),
+        "context": arguments.get("context")
+    }
+
+# Map tool names to their argument preparation functions
+ARG_PREP_MAP = {
+    "api_selection": _prepare_api_selection_args,
+    "logic_creation": _prepare_logic_creation_args,
+    "code_creation": _prepare_code_creation_args,
+    "test_run": _prepare_test_run_args,
+    "file_output": _prepare_file_output_args,
+}
+
 @app.call_tool()
 async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
     """
@@ -254,52 +314,23 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
         List of TextContent with tool results
     """
     try:
-        if name == "api_selection":
-            result = api_selection(
-                user_request=arguments.get("user_request"),
-                context=arguments.get("context")
-            )
-            
-        elif name == "logic_creation":
-            result = logic_creation(
-                user_request=arguments.get("user_request"),
-                selected_api=arguments.get("selected_api"),
-                context=arguments.get("context")
-            )
-            
-        elif name == "code_creation":
-            result = code_creation(
-                pseudo_code=arguments.get("pseudo_code"),
-                data_structures=arguments.get("data_structures"),
-                error_handling_strategy=arguments.get("error_handling_strategy"),
-                selected_api=arguments.get("selected_api"),
-                target_language=arguments.get("target_language", "Python"),
-                context=arguments.get("context")
-            )
-            
-        elif name == "test_run":
-            result = test_run(
-                code=arguments.get("code"),
-                target_language=arguments.get("target_language"),
-                selected_api=arguments.get("selected_api"),
-                context=arguments.get("context")
-            )
-            
-        elif name == "file_output":
-            result = file_output(
-                code=arguments.get("code"),
-                target_language=arguments.get("target_language"),
-                selected_api=arguments.get("selected_api"),
-                dependencies=arguments.get("dependencies"),
-                test_results=arguments.get("test_results"),
-                context=arguments.get("context")
-            )
-            
-        else:
+        tool_func = TOOL_MAP.get(name)
+        if tool_func is None:
             result = {
                 "status": "error",
                 "error_msg": f"Unknown tool: {name}"
             }
+        else:
+            # Prepare arguments using the argument preparation map
+            arg_prep_func = ARG_PREP_MAP.get(name)
+            if arg_prep_func is None:
+                result = {
+                    "status": "error",
+                    "error_msg": f"No argument preparation function found for {name}"
+                }
+            else:
+                prepared_args = arg_prep_func(arguments)
+                result = await tool_func(**prepared_args)
         
         # Format result as JSON string
         result_json = json.dumps(result, indent=2, default=str)
